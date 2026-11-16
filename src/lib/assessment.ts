@@ -3,32 +3,67 @@ import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import {
   getTicketDetails,
+  getTicketConversations,
   downloadAttachment,
   addInternalNote,
   type Desk365Ticket,
   type Desk365Attachment,
 } from "@/lib/desk365";
 
-const MODEL = "claude-sonnet-4-5";
+const MODEL = "claude-sonnet-4-5-20251001";
 
 // ── Prompt ───────────────────────────────────────────────────────────────────
 
 const SYSTEM_PROMPT = `You are an expert claims assessor for a youth care organisation.
 You review damage claims submitted by youth workers when young people in residential care cause property damage.
 
-Your role is to assess whether a claim submission is complete and accurate based on the evidence provided.
+Your role is to assess whether a claim submission is COMPLETE and ACCURATE based on the evidence provided.
 You NEVER approve or reject a claim — that decision always belongs to a human staff member.
 You assess completeness and flag issues so staff can review efficiently.
 
-For every claim you must:
-1. Identify what evidence was provided (photos, quotes, invoices, incident reports).
-2. Check whether mandatory fields are present and consistent.
-3. Identify any discrepancies, missing documents, or concerns.
-4. Recommend one of three outcomes: COMPLETE, INCOMPLETE, or REVIEW_REQUIRED.
+## Evidence types and what to check for each
 
-COMPLETE — All required documents present, fields consistent, no red flags.
-INCOMPLETE — One or more mandatory items missing (quote, invoice, incident report, photos).
-REVIEW_REQUIRED — Documents present but discrepancies exist, amounts are unusually high, or other concerns warrant human scrutiny.
+CLAIM DETAILS (from the ticket custom fields)
+- Claimant name (young person), incident date, placement/location, damage description, claimed amount
+- Flag if any mandatory field is missing or the description is vague
+
+PHOTOS (image attachments)
+- Do the photos actually show the reported damage?
+- Are they clear enough to identify the damaged item?
+- Do they show any identifying labels, serial numbers or brand markings?
+- Are there enough photos (at least one overview + close-up)?
+- Flag if photos are unrelated to the reported damage, too blurry, or missing entirely
+
+INVOICES / RECEIPTS
+- Item description, purchase value, invoice date, supplier name, and amount claimed
+- Does the amount on the invoice match the claimed amount?
+- Is the invoice dated after the incident (replacement) or before (proof of original value)?
+- Flag mismatches or invoices that do not relate to the damaged item
+
+DELIVERY DOCUMENTS
+- Consignment number, delivery date, receiver name, any recorded damage on delivery
+- Flag if damage could have occurred in transit and was not noted on delivery
+
+INCIDENT / DAMAGE REPORTS (IR)
+- What happened, when, where, what was damaged, and who was involved
+- Is the IR# provided and does the incident date match the ticket?
+- Flag if the incident report is missing or the dates are inconsistent
+
+REPAIR / REPLACEMENT QUOTES
+- Does the quoted work or replacement item relate to the specific damaged item?
+- Is the quote from a legitimate supplier with contact details?
+- For repairs: does the quoted scope match the described damage?
+- Flag if the quote covers more than the reported damage or is suspiciously high
+
+EMAILS / CORRESPONDENCE
+- Supporting explanations, manager acknowledgements, CSO sign-offs, discrepancies
+- Flag unexplained gaps or contradictions between correspondence and other evidence
+
+## Outcomes
+
+COMPLETE — All required documents present, amounts consistent, no red flags.
+INCOMPLETE — One or more mandatory items missing (quote OR invoice, incident report, photos, claimant name, incident date).
+REVIEW_REQUIRED — Documents present but discrepancies exist, amounts are unusually high, evidence does not match the described damage, or concerns warrant human scrutiny.
 
 Always respond with valid JSON in the exact schema provided.`;
 
@@ -44,10 +79,31 @@ const ASSESSMENT_SCHEMA = {
       type: "string",
       description: "2-3 sentence plain-English summary for staff reviewers",
     },
-    evidence_found: {
+    evidence_reviewed: {
       type: "array",
-      items: { type: "string" },
-      description: "List of evidence types identified (e.g. 'Quote from XYZ Repairs - $450')",
+      description: "One entry per file or evidence item reviewed",
+      items: {
+        type: "object",
+        properties: {
+          filename: { type: "string" },
+          evidence_type: {
+            type: "string",
+            enum: ["photo", "invoice", "receipt", "delivery_document", "incident_report", "quote", "email_correspondence", "other"],
+          },
+          description: { type: "string", description: "One-line description of what this file shows" },
+          extracted_fields: {
+            type: "object",
+            description: "Key fields extracted from this document",
+            additionalProperties: { type: "string" },
+          },
+          issues: {
+            type: "array",
+            items: { type: "string" },
+            description: "Any specific issues with this file",
+          },
+        },
+        required: ["filename", "evidence_type", "description"],
+      },
     },
     validation_issues: {
       type: "array",
@@ -79,7 +135,7 @@ const ASSESSMENT_SCHEMA = {
   required: [
     "recommended_outcome",
     "summary",
-    "evidence_found",
+    "evidence_reviewed",
     "validation_issues",
     "suggested_next_actions",
     "confidence_score",
@@ -89,7 +145,13 @@ const ASSESSMENT_SCHEMA = {
 type AssessmentOutput = {
   recommended_outcome: "COMPLETE" | "INCOMPLETE" | "REVIEW_REQUIRED";
   summary: string;
-  evidence_found: string[];
+  evidence_reviewed: Array<{
+    filename: string;
+    evidence_type: string;
+    description: string;
+    extracted_fields?: Record<string, string>;
+    issues?: string[];
+  }>;
   validation_issues: Array<{
     rule_id: string;
     category: "MISSING" | "MISMATCH" | "UNCLEAR" | "EXTRACTION_FAILURE";
@@ -173,76 +235,88 @@ export async function runAssessment(claimId: string): Promise<void> {
     },
   });
 
-  // Download & store attachments
-  const attachments = ticket.attachments ?? [];
-  const evidenceInputs: Array<{ type: "image"; source: { type: "base64"; media_type: string; data: string }; filename: string } |
-    { type: "text"; text: string; filename: string }> = [];
+  // Collect ticket-level attachments + conversation attachments
+  const attachments: Desk365Attachment[] = [...(ticket.attachments ?? [])];
 
-  for (const att of attachments) {
-    try {
-      const buf = await downloadAttachment(att.attachment_url);
-      const hash = sha256(buf);
-      const isImage = att.file_type.startsWith("image/");
-      const isPdf = att.file_type === "application/pdf";
-
-      // Store evidence file record (storageKey is placeholder until SharePoint is set up)
-      const existing = await prisma.evidenceFile.findFirst({
-        where: { claimId, sourceAttachmentId: att.file_name },
-      });
-      if (existing) {
-        await prisma.evidenceFile.update({
-          where: { id: existing.id },
-          data: { fileSize: buf.length, sha256: hash, uploadTimestamp: new Date(att.created_on) },
-        });
-      } else {
-        await prisma.evidenceFile.create({
-          data: {
-            claimId,
-            originalFilename: att.file_name,
-            mimeType: att.file_type,
-            fileSize: buf.length,
-            sha256: hash,
-            sourceAttachmentId: att.file_name,
-            storageKey: `pending/${claimId}/${att.file_name}`,
-            uploadTimestamp: new Date(att.created_on),
-          },
-        });
+  try {
+    const conversations = await getTicketConversations(ticket.ticket_number);
+    for (const conv of conversations.conversations ?? []) {
+      for (const att of conv.attachments ?? []) {
+        // Deduplicate by filename+size in case the same file appears twice
+        const isDupe = attachments.some(
+          (a) => a.file_name === att.file_name && a.file_size === att.file_size
+        );
+        if (!isDupe) attachments.push(att);
       }
-
-      if (isImage) {
-        evidenceInputs.push({
-          type: "image",
-          source: {
-            type: "base64",
-            media_type: att.file_type as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
-            data: buf.toString("base64"),
-          },
-          filename: att.file_name,
-        });
-      } else if (isPdf) {
-        // Send PDF filename as text note — vision for PDFs not yet supported in this integration
-        evidenceInputs.push({
-          type: "text",
-          text: `[PDF attached: ${att.file_name}, ${(buf.length / 1024).toFixed(0)} KB]`,
-          filename: att.file_name,
-        });
-      } else {
-        evidenceInputs.push({
-          type: "text",
-          text: `[File attached: ${att.file_name}, type: ${att.file_type}, ${(buf.length / 1024).toFixed(0)} KB]`,
-          filename: att.file_name,
-        });
-      }
-    } catch (err) {
-      // Don't fail the whole assessment for one bad attachment
-      console.error(`Failed to process attachment ${att.file_name}:`, err);
-      evidenceInputs.push({
-        type: "text",
-        text: `[Failed to retrieve: ${att.file_name}]`,
-        filename: att.file_name,
-      });
     }
+  } catch (err) {
+    console.warn(`Failed to fetch conversations for ticket ${ticket.ticket_number}:`, err);
   }
+
+  type EvidenceInput =
+    | { type: "image"; source: { type: "base64"; media_type: string; data: string }; filename: string }
+    | { type: "text"; text: string; filename: string };
+
+  // Download all attachments in parallel (each has a 30s timeout)
+  const evidenceInputs: EvidenceInput[] = (
+    await Promise.all(
+      attachments.map(async (att): Promise<EvidenceInput> => {
+        try {
+          const buf = await downloadAttachment(att.attachment_url);
+          const hash = sha256(buf);
+          const isImage = att.file_type.startsWith("image/");
+          const isPdf = att.file_type === "application/pdf";
+          const uploadTimestamp = att.created_on ? new Date(att.created_on) : new Date();
+
+          // Upsert evidence file record
+          const existing = await prisma.evidenceFile.findFirst({
+            where: { claimId, sourceAttachmentId: att.file_name },
+          });
+          if (existing) {
+            await prisma.evidenceFile.update({
+              where: { id: existing.id },
+              data: { fileSize: buf.length, sha256: hash, uploadTimestamp },
+            });
+          } else {
+            await prisma.evidenceFile.create({
+              data: {
+                claimId,
+                originalFilename: att.file_name,
+                mimeType: att.file_type,
+                fileSize: buf.length,
+                sha256: hash,
+                sourceAttachmentId: att.file_name,
+                storageKey: `pending/${claimId}/${att.file_name}`,
+                uploadTimestamp,
+              },
+            });
+          }
+
+          if (isImage) {
+            return {
+              type: "image",
+              source: {
+                type: "base64",
+                media_type: att.file_type as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
+                data: buf.toString("base64"),
+              },
+              filename: att.file_name,
+            };
+          }
+          return {
+            type: "text",
+            text: isPdf
+              ? `[PDF: ${att.file_name}, ${(buf.length / 1024).toFixed(0)} KB]`
+              : `[File: ${att.file_name}, type: ${att.file_type}, ${(buf.length / 1024).toFixed(0)} KB]`,
+            filename: att.file_name,
+          };
+        } catch (err) {
+          console.error(`Failed to process attachment ${att.file_name}:`, err);
+          return { type: "text", text: `[Failed to retrieve: ${att.file_name}]`, filename: att.file_name };
+        }
+      })
+    )
+  );
 
   // Mark as ANALYSING
   await prisma.claim.update({
@@ -327,6 +401,22 @@ export async function runAssessment(claimId: string): Promise<void> {
         modelVersion: MODEL,
       },
     });
+
+    // Write extracted fields and classification back to evidence file records
+    for (const ev of output.evidence_reviewed ?? []) {
+      const file = await tx.evidenceFile.findFirst({
+        where: { claimId, originalFilename: ev.filename },
+      });
+      if (file) {
+        await tx.evidenceFile.update({
+          where: { id: file.id },
+          data: {
+            classification: ev.evidence_type,
+            extractedFields: ev.extracted_fields ?? {},
+          },
+        });
+      }
+    }
 
     // Clear old open issues and write fresh ones
     await tx.validationIssue.deleteMany({

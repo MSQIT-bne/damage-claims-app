@@ -99,6 +99,25 @@ export interface Desk365TicketList {
   tickets: Desk365Ticket[];
 }
 
+export interface Desk365Conversation {
+  id: number;
+  ticket_number: number;
+  created_by: string;
+  creator_name: string;
+  type: string; // "reply" | "note" | "forward"
+  sender_type: string; // "agent" | "contact"
+  public_note: boolean | null;
+  body_text?: string;
+  attachments_count: number;
+  attachments?: Desk365Attachment[];
+  created_on: string;
+}
+
+export interface Desk365ConversationList {
+  count: number;
+  conversations: Desk365Conversation[];
+}
+
 // --- API methods ---
 
 export async function listTickets(opts?: {
@@ -129,13 +148,24 @@ export async function getTicketDetails(ticketNumber: number | string): Promise<D
   });
 }
 
-export async function downloadAttachment(url: string): Promise<Buffer> {
-  // S3 pre-signed URLs don't need API key auth
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`Failed to download attachment: ${res.status}`);
+export async function getTicketConversations(
+  ticketNumber: number | string
+): Promise<Desk365ConversationList> {
+  return get<Desk365ConversationList>("/tickets/conversations", {
+    ticket_number: String(ticketNumber),
+  });
+}
+
+export async function downloadAttachment(url: string, timeoutMs = 30_000): Promise<Buffer> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) throw new Error(`Failed to download attachment: ${res.status}`);
+    return Buffer.from(await res.arrayBuffer());
+  } finally {
+    clearTimeout(timer);
   }
-  return Buffer.from(await res.arrayBuffer());
 }
 
 export async function addInternalNote(ticketNumber: number | string, note: string): Promise<void> {
