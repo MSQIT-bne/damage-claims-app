@@ -1,0 +1,180 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ProcessingState {
+  QUEUED
+  COLLECTING
+  ANALYSING
+  AWAITING_REVIEW
+  FAILED
+  FINALISED
+}
+
+enum AssessmentOutcome {
+  COMPLETE
+  INCOMPLETE
+  REVIEW_REQUIRED
+}
+
+enum UserRole {
+  CLAIMS_STAFF
+  CLAIMS_MANAGER
+  ADMINISTRATOR
+}
+
+enum IssueCategory {
+  MISSING
+  MISMATCH
+  UNCLEAR
+  EXTRACTION_FAILURE
+}
+
+enum IssueSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ResolutionStatus {
+  OPEN
+  RESOLVED
+  WAIVED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  role         UserRole @default(CLAIMS_STAFF)
+  entraId      String?  @unique
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  reviewedClaims Claim[]      @relation("ReviewedBy")
+  auditEvents    AuditEvent[]
+}
+
+model Claim {
+  id                String             @id @default(cuid())
+  desk365TicketId   String             @unique
+  title             String?
+  description       String?
+  claimType         String             @default("youth-care-damage")
+  claimant          String?
+  incidentDate      DateTime?
+  claimedAmount     Decimal?
+  currency          String?            @default("AUD")
+
+  desk365Status     String?
+  syncTimestamp     DateTime?
+
+  processingState   ProcessingState    @default(QUEUED)
+  assessmentOutcome AssessmentOutcome?
+  assessmentVersion Int                @default(0)
+
+  reviewerId        String?
+  reviewer          User?              @relation("ReviewedBy", fields: [reviewerId], references: [id])
+  reviewTimestamp   DateTime?
+  reviewDecision    String?
+
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  evidenceFiles     EvidenceFile[]
+  validationIssues  ValidationIssue[]
+  auditEvents       AuditEvent[]
+  assessments       Assessment[]
+}
+
+model EvidenceFile {
+  id                     String    @id @default(cuid())
+  claimId                String
+  claim                  Claim     @relation(fields: [claimId], references: [id], onDelete: Cascade)
+
+  originalFilename       String
+  mimeType               String
+  fileSize               Int
+  sha256                 String
+  sourceAttachmentId     String
+
+  storageKey             String
+  uploadTimestamp        DateTime  @default(now())
+  classification         String?
+  classificationConfidence Float?
+
+  extractedFields        Json?
+  processingErrors       Json?
+
+  validationIssues       ValidationIssue[]
+}
+
+model ValidationIssue {
+  id               String           @id @default(cuid())
+  claimId          String
+  claim            Claim            @relation(fields: [claimId], references: [id], onDelete: Cascade)
+
+  ruleId           String
+  category         IssueCategory
+  severity         IssueSeverity
+  description      String
+  expectedValue    String?
+  observedValue    String?
+
+  fileIds          String[]
+  pageOrRegionRefs String[]
+  resolutionStatus ResolutionStatus @default(OPEN)
+  resolutionNote   String?
+
+  evidenceFiles    EvidenceFile[]
+}
+
+model Assessment {
+  id                 String             @id @default(cuid())
+  claimId            String
+  claim              Claim              @relation(fields: [claimId], references: [id], onDelete: Cascade)
+
+  version            Int
+  recommendedOutcome AssessmentOutcome
+  summary            String
+  rawOutput          Json
+  modelVersion       String?
+
+  createdAt          DateTime           @default(now())
+}
+
+model AuditEvent {
+  id        String   @id @default(cuid())
+  claimId   String
+  claim     Claim    @relation(fields: [claimId], references: [id], onDelete: Cascade)
+
+  actorId   String?
+  actor     User?    @relation(fields: [actorId], references: [id])
+  action    String
+  oldValue  Json?
+  newValue  Json?
+  reason    String?
+  timestamp DateTime @default(now())
+}
+
+model ClaimRule {
+  id          String   @id @default(cuid())
+  claimType   String
+  ruleId      String
+  name        String
+  description String
+  isRequired  Boolean  @default(true)
+  severity    IssueSeverity @default(HIGH)
+  config      Json?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([claimType, ruleId])
+}
