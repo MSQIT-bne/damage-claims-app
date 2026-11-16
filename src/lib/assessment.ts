@@ -357,7 +357,7 @@ export async function runAssessment(claimId: string): Promise<void> {
   try {
     const message = await client.messages.create({
       model: MODEL,
-      max_tokens: 2048,
+      max_tokens: 8192,
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: userContent }],
     });
