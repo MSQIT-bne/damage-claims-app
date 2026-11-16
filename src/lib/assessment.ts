@@ -10,7 +10,7 @@ import {
   type Desk365Attachment,
 } from "@/lib/desk365";
 
-const MODEL = "claude-sonnet-4-5-20251001";
+const MODEL = "claude-sonnet-4-6";
 
 // ── Prompt ───────────────────────────────────────────────────────────────────
 
