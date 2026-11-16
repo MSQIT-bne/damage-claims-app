@@ -80,7 +80,6 @@ export async function GET(
 
     // Meta
     organisation_name: "KAIZER Community",
-    generated_date: generatedDate,
   };
 
   const buffer = await generateClaimsForm(fields);
