@@ -6,7 +6,7 @@
 import { prisma } from "@/lib/prisma";
 import { listTickets, getTicketDetails } from "@/lib/desk365";
 
-const TRIGGER_STATUS = "Claim:Actioning";
+const TRIGGER_STATUS = "Claims - actioning";
 
 export async function pollDesk365(): Promise<{ queued: number; skipped: number; errors: number }> {
   const lastSync = await prisma.claim.findFirst({
