@@ -65,7 +65,16 @@ COMPLETE — All required documents present, amounts consistent, no red flags.
 INCOMPLETE — One or more mandatory items missing (quote OR invoice, incident report, photos, claimant name, incident date).
 REVIEW_REQUIRED — Documents present but discrepancies exist, amounts are unusually high, evidence does not match the described damage, or concerns warrant human scrutiny.
 
-Always respond with valid JSON in the exact schema provided.`;
+Always respond with valid JSON in the exact schema provided.
+
+## form_fields
+
+In addition to the assessment, populate the \`form_fields\` object to pre-fill the
+"Contingency Property Damage Application Form" for Queensland Child Safety.
+Extract values from the evidence (incident reports, invoices, emails, photos, quotes).
+Use "Unknown" or "Not stated" when a value cannot be found — never leave required fields empty.
+For \`items_damaged\`, include one entry per distinct damaged item from invoices/quotes.
+For \`total_amount_claimed\`, sum all invoice/quote totals and format as "$X,XXX.XX".`;
 
 const ASSESSMENT_SCHEMA = {
   type: "object",
@@ -131,6 +140,37 @@ const ASSESSMENT_SCHEMA = {
       maximum: 1,
       description: "0–1 confidence in this assessment",
     },
+    form_fields: {
+      type: "object",
+      description: "Fields extracted to populate the Contingency Property Damage Application Form",
+      properties: {
+        incident_datetime: { type: "string", description: "Date and time of the incident (from IR or ticket custom fields)" },
+        incident_location: { type: "string", description: "Full address/placement where damage occurred" },
+        incident_description: { type: "string", description: "Narrative of how the damage occurred, who discovered it. Mention who was involved." },
+        security_in_place: { type: "string", description: "What security measures were in place at the time (if mentioned in reports)" },
+        witnesses: { type: "string", description: "Names and contact details of any witnesses listed in documents" },
+        person_responsible: { type: "string", description: "Name of the young person(s) who caused the damage" },
+        property_owner: { type: "string", description: "Owner of the damaged property and their contact details" },
+        reoccurrence_prevention: { type: "string", description: "Actions taken to prevent recurrence (from IR or emails)" },
+        items_damaged: {
+          type: "array",
+          description: "List of damaged items extracted from invoices, quotes and descriptions",
+          items: {
+            type: "object",
+            properties: {
+              description: { type: "string", description: "Description of the damaged item" },
+              supplier: { type: "string", description: "Original supplier or repairer" },
+              age: { type: "string", description: "Age of the item (e.g. 'New', '2 years', 'Unknown')" },
+              purchase_price: { type: "string", description: "Original purchase price (e.g. '$250.00') or 'Unknown'" },
+              amount_claimed: { type: "string", description: "Amount being claimed (from invoice/quote total)" },
+            },
+            required: ["description", "supplier", "age", "purchase_price", "amount_claimed"],
+          },
+        },
+        total_amount_claimed: { type: "string", description: "Total dollar amount being claimed across all items" },
+      },
+      required: ["incident_datetime", "incident_location", "incident_description", "person_responsible", "items_damaged", "total_amount_claimed"],
+    },
   },
   required: [
     "recommended_outcome",
@@ -139,6 +179,7 @@ const ASSESSMENT_SCHEMA = {
     "validation_issues",
     "suggested_next_actions",
     "confidence_score",
+    "form_fields",
   ],
 } as const;
 
@@ -162,6 +203,24 @@ type AssessmentOutput = {
   }>;
   suggested_next_actions: string[];
   confidence_score: number;
+  form_fields: {
+    incident_datetime: string;
+    incident_location: string;
+    incident_description: string;
+    security_in_place?: string;
+    witnesses?: string;
+    person_responsible: string;
+    property_owner?: string;
+    reoccurrence_prevention?: string;
+    items_damaged: Array<{
+      description: string;
+      supplier: string;
+      age: string;
+      purchase_price: string;
+      amount_claimed: string;
+    }>;
+    total_amount_claimed: string;
+  };
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

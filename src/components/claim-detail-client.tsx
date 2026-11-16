@@ -216,6 +216,15 @@ export function ClaimDetailClient({
               {reanalysing ? "Starting…" : "Reanalyse"}
             </button>
           )}
+          {claim.assessments.length > 0 && (
+            <a
+              href={`/api/claims/${claim.id}/generate-form`}
+              download
+              className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600"
+            >
+              Generate Form ↓
+            </a>
+          )}
           {isAwaitingReview && canReview && !submitted && (
             <button
               onClick={() => setShowReviewModal(true)}
