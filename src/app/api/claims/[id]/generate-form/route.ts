@@ -76,7 +76,6 @@ export async function GET(
     items_damaged: Array.isArray(ff.items_damaged)
       ? (ff.items_damaged as FormFields["items_damaged"])
       : [],
-    total_amount_claimed: (ff.total_amount_claimed as string) || "$0.00",
 
     // Meta
     organisation_name: "KAIZER Community",

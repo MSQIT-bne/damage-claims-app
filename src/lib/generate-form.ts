@@ -39,7 +39,6 @@ export interface FormFields {
     purchase_price: string;
     amount_claimed: string;
   }>;
-  total_amount_claimed: string;
 
   // Meta
   organisation_name: string;
@@ -179,14 +178,27 @@ export async function generateClaimsForm(fields: FormFields): Promise<Buffer> {
     xml = replaceSdtText(xml, base + 4, stripDollar(item.amount_claimed));
   }
 
-  // ── SDT 46: Total amount claimed ──────────────────────────────────────────
-  // This SDT has empty content — replaceSdtText injects a new run
-  xml = replaceSdtText(xml, 46, stripDollar(fields.total_amount_claimed));
+  // ── Total amount: computed sum of amount_claimed column ──────────────────
+  // The total SDT uses self-closing <w:sdtContent/> so the index-based
+  // replaceSdtText won't reach it. Replace it directly.
+  const parseAmount = (s: string): number =>
+    parseFloat((s || "0").replace(/[^0-9.]/g, "")) || 0;
+  const totalComputed = fields.items_damaged.reduce(
+    (sum, item) => sum + parseAmount(item.amount_claimed),
+    0
+  );
+  const totalStr = totalComputed
+    .toFixed(2)
+    .replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  xml = xml.replace(
+    /<w:sdtContent\/>/g,
+    `<w:sdtContent><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">${esc(totalStr)}</w:t></w:r></w:sdtContent>`
+  );
 
-  // SDT 47: ☐ (fixed checkbox — please attach evidence)
+  // SDT 46: ☐ (fixed checkbox — please attach evidence)
 
-  // ── SDT 48: Organisation name ─────────────────────────────────────────────
-  xml = replaceSdtText(xml, 48, fields.organisation_name);
+  // ── SDT 47: Organisation name ─────────────────────────────────────────────
+  xml = replaceSdtText(xml, 47, fields.organisation_name);
 
   // SDT 49–52: ☐ (fixed checkboxes — NGO evidence checklist)
 
