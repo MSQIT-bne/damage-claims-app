@@ -1,3 +1,5 @@
+export const instant = false;
+
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { NavBar } from "@/components/nav-bar";
