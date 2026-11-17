@@ -1,6 +1,7 @@
-import Link from "next/link";
+"use client";
 
-export const dynamic = "force-dynamic";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 
 const messages: Record<string, string> = {
   Configuration: "There is a problem with the server configuration. Please contact your administrator.",
@@ -9,13 +10,10 @@ const messages: Record<string, string> = {
   Default: "An unexpected error occurred during sign in.",
 };
 
-export default async function AuthErrorPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ error?: string }>;
-}) {
-  const { error } = await searchParams;
-  const message = messages[error ?? "Default"] ?? messages.Default;
+export default function AuthErrorPage() {
+  const searchParams = useSearchParams();
+  const error = searchParams.get("error") ?? "Default";
+  const message = messages[error] ?? messages.Default;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
