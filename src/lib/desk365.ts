@@ -127,9 +127,11 @@ export async function listTickets(opts?: {
   includeCustomFields?: boolean;
   includeDescription?: boolean;
 }): Promise<Desk365TicketList> {
+  const count = opts?.count ?? 50;
+  // API only accepts 30, 50, or 100
+  const validCount = count >= 100 ? 100 : count >= 50 ? 50 : 30;
   const params: Record<string, string> = {
-    ticket_count: String(opts?.count ?? 50),
-    offset: String(opts?.offset ?? 0),
+    ticket_count: String(validCount),
     order_by: "updated_time",
     order_type: "desc",
   };
