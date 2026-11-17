@@ -1,9 +1,9 @@
-import { connection } from "next/server";
+export const instant = false;
+
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 
 export default async function Home() {
-  await connection();
   const session = await auth();
   if (!session) {
     redirect("/auth/signin");
