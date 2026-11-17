@@ -45,15 +45,17 @@ export function ClaimsQueue() {
   const [total, setTotal] = useState(0);
   const [filter, setFilter] = useState("");
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<string | null>(null);
 
-  useEffect(() => {
+  function fetchClaims(f: string) {
     setLoading(true);
     const params = new URLSearchParams();
-    if (filter) {
-      if (["QUEUED","COLLECTING","ANALYSING","AWAITING_REVIEW","FAILED","FINALISED"].includes(filter)) {
-        params.set("state", filter);
+    if (f) {
+      if (["QUEUED","COLLECTING","ANALYSING","AWAITING_REVIEW","FAILED","FINALISED"].includes(f)) {
+        params.set("state", f);
       } else {
-        params.set("outcome", filter);
+        params.set("outcome", f);
       }
     }
     fetch(`/api/claims?${params}`)
@@ -63,12 +65,37 @@ export function ClaimsQueue() {
         setTotal(data.total ?? 0);
       })
       .finally(() => setLoading(false));
-  }, [filter]);
+  }
+
+  useEffect(() => { fetchClaims(filter); }, [filter]);
+
+  async function handleSync() {
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const res = await fetch("/api/sync", { method: "POST" });
+      const data = await res.json();
+      if (data.ok) {
+        setSyncResult(
+          data.queued > 0
+            ? `${data.queued} new ticket${data.queued !== 1 ? "s" : ""} pulled in`
+            : "No new tickets found"
+        );
+        fetchClaims(filter);
+      } else {
+        setSyncResult(`Sync failed: ${data.error}`);
+      }
+    } catch {
+      setSyncResult("Sync failed: network error");
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   return (
     <div>
       {/* Filter tabs */}
-      <div className="flex gap-2 mb-4 flex-wrap">
+      <div className="flex gap-2 mb-4 flex-wrap items-center">
         {filters.map((f) => (
           <button
             key={f.value}
@@ -82,8 +109,28 @@ export function ClaimsQueue() {
             {f.label}
           </button>
         ))}
-        <span className="ml-auto text-sm text-gray-500 self-center">
-          {total} claim{total !== 1 ? "s" : ""}
+        <span className="ml-auto flex items-center gap-3">
+          {syncResult && (
+            <span className="text-xs text-gray-500">{syncResult}</span>
+          )}
+          <button
+            onClick={handleSync}
+            disabled={syncing}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+          >
+            <svg
+              className={`w-3.5 h-3.5 ${syncing ? "animate-spin" : ""}`}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            {syncing ? "Syncing…" : "Sync Desk365"}
+          </button>
+          <span className="text-sm text-gray-500">
+            {total} claim{total !== 1 ? "s" : ""}
+          </span>
         </span>
       </div>
 
