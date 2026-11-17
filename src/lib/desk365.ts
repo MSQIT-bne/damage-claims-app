@@ -130,7 +130,7 @@ export async function listTickets(opts?: {
   const params: Record<string, string> = {
     ticket_count: String(opts?.count ?? 50),
     offset: String(opts?.offset ?? 0),
-    order_by: "updated_on",
+    order_by: "updated_time",
     order_type: "desc",
   };
   if (opts?.updatedSince) {
