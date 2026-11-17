@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 
 const messages: Record<string, string> = {
@@ -10,11 +11,22 @@ const messages: Record<string, string> = {
   Default: "An unexpected error occurred during sign in.",
 };
 
-export default function AuthErrorPage() {
+function ErrorContent() {
   const searchParams = useSearchParams();
   const error = searchParams.get("error") ?? "Default";
   const message = messages[error] ?? messages.Default;
 
+  return (
+    <>
+      <p className="mt-2 text-sm text-gray-500">{message}</p>
+      {error !== "Default" && (
+        <p className="mt-1 text-xs text-gray-400 font-mono">Code: {error}</p>
+      )}
+    </>
+  );
+}
+
+export default function AuthErrorPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="bg-white p-8 rounded-lg border border-gray-200 shadow-sm max-w-sm w-full text-center">
@@ -25,10 +37,9 @@ export default function AuthErrorPage() {
             </svg>
           </div>
           <h1 className="text-xl font-semibold text-gray-900">Sign-in error</h1>
-          <p className="mt-2 text-sm text-gray-500">{message}</p>
-          {error && (
-            <p className="mt-1 text-xs text-gray-400 font-mono">Code: {error}</p>
-          )}
+          <Suspense fallback={<p className="mt-2 text-sm text-gray-500">An error occurred during sign in.</p>}>
+            <ErrorContent />
+          </Suspense>
         </div>
         <Link
           href="/auth/signin"
