@@ -9,20 +9,11 @@ import { listTickets, getTicketDetails } from "@/lib/desk365";
 const TRIGGER_STATUS = "Claims - actioning";
 
 export async function pollDesk365(): Promise<{ queued: number; skipped: number; errors: number }> {
-  const lastSync = await prisma.claim.findFirst({
-    orderBy: { syncTimestamp: "desc" },
-    select: { syncTimestamp: true },
-  });
-
-  const updatedSince = lastSync?.syncTimestamp
-    ? new Date(lastSync.syncTimestamp.getTime() - 60_000)
-    : undefined;
-
   let allTickets;
   try {
-    // Fetch recent tickets (no server-side status filter available)
+    // Fetch latest 100 tickets — no updatedSince filter so we catch tickets
+    // that have been in "Claims - actioning" for a long time without recent updates
     allTickets = await listTickets({
-      updatedSince,
       count: 100,
       includeCustomFields: false,
     });
