@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
 
   const { ticket_id, status } = payload;
 
-  if (!ticket_id || status !== "Claims - actioning") {
+  if (!ticket_id || status !== "Claims - Actioning") {
     return NextResponse.json({ received: true });
   }
 
