@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+export const dynamic = "force-dynamic";
+
 const messages: Record<string, string> = {
   Configuration: "There is a problem with the server configuration. Please contact your administrator.",
   AccessDenied: "You do not have permission to access this application.",
