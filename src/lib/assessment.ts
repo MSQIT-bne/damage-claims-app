@@ -447,7 +447,7 @@ export async function runAssessment(claimId: string): Promise<void> {
   });
   const nextVersion = (currentClaim?.assessmentVersion ?? 0) + 1;
 
-  // Persist assessment + issues in a transaction
+  // Persist assessment + issues in a transaction (60s timeout — many writes after a slow AI call)
   await prisma.$transaction(async (tx) => {
     // Create assessment record
     await tx.assessment.create({
@@ -518,7 +518,7 @@ export async function runAssessment(claimId: string): Promise<void> {
         },
       },
     });
-  });
+  }, { timeout: 60000 });
 
   // Add internal note to Desk365 ticket
   const noteLines = [
