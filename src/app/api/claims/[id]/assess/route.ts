@@ -22,10 +22,7 @@ export async function POST(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  // Allow reanalysis from AWAITING_REVIEW or FAILED; block if already running
-  if (["COLLECTING", "ANALYSING"].includes(claim.processingState)) {
-    return NextResponse.json({ error: "Assessment already in progress" }, { status: 409 });
-  }
+  // No state guard — allow force re-run on stuck COLLECTING/ANALYSING claims too
 
   // Reset state to QUEUED so the worker picks it up
   await prisma.claim.update({
