@@ -24,16 +24,19 @@ export async function POST(
 
   // No state guard — allow force re-run on stuck COLLECTING/ANALYSING claims too
 
-  // Reset state to QUEUED so the worker picks it up
+  // Reset state to QUEUED
   await prisma.claim.update({
     where: { id },
     data: { processingState: "QUEUED" },
   });
 
-  // Run inline (Vercel Functions have a 60s limit on hobby; use background for prod)
-  runAssessment(id).catch((err) => {
+  // Run synchronously — fire-and-forget is killed by Vercel before it completes
+  try {
+    await runAssessment(id);
+  } catch (err) {
     console.error(`Assessment failed for claim ${id}:`, err);
-  });
+    return NextResponse.json({ error: String(err) }, { status: 500 });
+  }
 
   return NextResponse.json({ started: true });
 }

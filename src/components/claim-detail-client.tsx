@@ -213,7 +213,7 @@ export function ClaimDetailClient({
               disabled={reanalysing}
               className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 disabled:opacity-50"
             >
-              {reanalysing ? "Starting…" : ["COLLECTING", "ANALYSING"].includes(claim.processingState) ? "Force Re-run" : "Reanalyse"}
+              {reanalysing ? "Running… (may take a minute)" : ["COLLECTING", "ANALYSING"].includes(claim.processingState) ? "Force Re-run" : "Reanalyse"}
             </button>
           )}
           {claim.assessments.length > 0 && (

@@ -1,4 +1,9 @@
 {
+  "functions": {
+    "src/app/api/claims/[id]/assess/route.ts": {
+      "maxDuration": 300
+    }
+  },
   "crons": [
     {
       "path": "/api/cron/process-claims",
