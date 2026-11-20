@@ -103,10 +103,16 @@ export async function generateClaimsForm(fields: FormFields): Promise<Buffer> {
 
   let xml = zip.file("word/document.xml")!.asText();
 
+  // ── Fix page margins: template tables are ~10,919 twips wide but the
+  //    original margins (left=567, right=567) only give 10,772 twips of content
+  //    width, causing overflow. Set left=454, right=454 → content=10,998 twips.
+  xml = xml.replace(
+    /<w:pgMar([^>]*)w:left="[^"]*"([^>]*)w:right="[^"]*"([^>]*)\/?>/,
+    (m) => m.replace(/w:left="[^"]*"/, 'w:left="454"').replace(/w:right="[^"]*"/, 'w:right="454"')
+  );
+
   // ── Global cleanup: remove placeholder indicators ─────────────────────────
-  // Remove <w:showingPlcHdr/> so Word renders actual content, not placeholder
   xml = xml.replace(/<w:showingPlcHdr\/>/g, "");
-  // Remove PlaceholderText run style so replaced text renders normally
   xml = xml.replace(/<w:rStyle w:val="PlaceholderText"\/>/g, "");
 
   // ── SDT 0: Claimant name ──────────────────────────────────────────────────
